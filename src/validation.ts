@@ -51,7 +51,12 @@ const hysteria2InboundSchema = z
     down_mbps: z.number().optional(),
     ignore_client_bandwidth: z.boolean().optional(),
     obfs: obfsSchema.optional(),
-    masquerade: z.string().optional(),
+    masquerade: z
+      .string()
+      .refine(v => /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(v), {
+        message: "masquerade must be a full URL including a scheme, e.g. https://example.com (a bare domain is rejected by sing-box itself with 'unknown masquerade URL scheme')",
+      })
+      .optional(),
     tls: tlsSchema
   })
   .catchall(jsonValueSchema);

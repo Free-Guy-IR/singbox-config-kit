@@ -130,6 +130,18 @@ export function validateSingBoxCoreDraft(draft: SingBoxCoreDraft): SingBoxValida
   return issues;
 }
 
+/**
+ * sing-box requires masquerade to be a full URL with a scheme (e.g. \"https://example.com\").
+ * Users naturally type a bare domain here, so default to https:// rather than reject it -
+ * this is exactly the failure mode that shipped once already (bare domain -> sing-box
+ * \"unknown masquerade URL scheme\" error, only surfaced at node-start time).
+ */
+function normalizeMasqueradeUrl(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 function hysteria2InboundOptionsFromDraft(draft: HysteriaInboundDraft) {
   const listenPort = parseListenPort(draft.listenPort);
   if (listenPort === undefined) {
@@ -173,7 +185,7 @@ function hysteria2InboundOptionsFromDraft(draft: HysteriaInboundDraft) {
     downMbps,
     ignoreClientBandwidth: draft.ignoreClientBandwidth || undefined,
     obfs: draft.obfsEnabled ? { password: draft.obfsPassword.trim() } : undefined,
-    masquerade: draft.masquerade.trim() || undefined,
+    masquerade: normalizeMasqueradeUrl(draft.masquerade),
     tls
   };
 }

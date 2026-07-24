@@ -70,6 +70,25 @@ describe("singbox-config-kit", () => {
     });
   });
 
+  it("normalizes a bare-domain masquerade to https:// on the draft path, and rejects it as raw config", () => {
+    // Regression test: a production core config once shipped with masquerade: "example.com"
+    // (no scheme) built via the visual editor - sing-box itself rejects this at node-start
+    // time with "unknown masquerade URL scheme", which is too late to catch mistakes.
+    const draft = createDefaultSingBoxCoreDraft();
+    draft.inbounds[0] = { ...draft.inbounds[0]!, masquerade: "example.com" };
+    const config = createSingBoxCoreConfigFromDraft(draft);
+    expect(config.inbounds[0]).toMatchObject({ masquerade: "https://example.com" });
+
+    const alreadyScheme = createHysteria2InboundConfig({ tag: "x", listenPort: 1, masquerade: "http://example.com", tls: {} });
+    expect(alreadyScheme.masquerade).toBe("http://example.com");
+
+    const result = validateSingBoxCoreConfig({
+      inbounds: [{ type: "hysteria2", tag: "a", listen_port: 8443, masquerade: "example.com", tls: { enabled: true } }],
+      outbounds: [{ type: "direct" }]
+    });
+    expect(result.ok).toBe(false);
+  });
+
   it("rejects hysteria2 inbounds without tls.enabled, duplicate tags, missing inbounds/outbounds, and bad ports", () => {
     expect(validateSingBoxCoreConfig({ inbounds: [], outbounds: [{ type: "direct" }] }).ok).toBe(false);
     expect(validateSingBoxCoreConfig({ inbounds: [{ type: "hysteria2", tag: "a", listen_port: 1, tls: { enabled: true } }], outbounds: [] }).ok).toBe(false);
