@@ -12,12 +12,29 @@ const tlsSchema = z
     enabled: z.boolean(),
     server_name: z.string().optional(),
     alpn: z.array(z.string()).optional(),
+    min_version: z.string().optional(),
+    max_version: z.string().optional(),
+    cipher_suites: z.array(z.string()).optional(),
     certificate_path: z.string().optional(),
     key_path: z.string().optional(),
     certificate: z.union([z.string(), z.array(z.string())]).optional(),
-    key: z.union([z.string(), z.array(z.string())]).optional()
+    key: z.union([z.string(), z.array(z.string())]).optional(),
+    // ech/acme are nested objects handled structurally by the node/core; passed through as-is.
+    ech: z.record(jsonValueSchema).optional(),
+    acme: z.record(jsonValueSchema).optional()
 })
     .catchall(jsonValueSchema);
+const masqueradeObjectSchema = z
+    .object({
+    type: z.enum(["file", "proxy", "string"])
+})
+    .catchall(jsonValueSchema);
+const masqueradeSchema = z.union([
+    z.string().refine(v => /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(v), {
+        message: "masquerade must be a full URL including a scheme, e.g. https://example.com (a bare domain is rejected by sing-box itself with 'unknown masquerade URL scheme')"
+    }),
+    masqueradeObjectSchema
+]);
 const obfsSchema = z
     .object({
     type: z.literal("salamander"),
@@ -37,13 +54,13 @@ const hysteria2InboundSchema = z
     up_mbps: z.number().optional(),
     down_mbps: z.number().optional(),
     ignore_client_bandwidth: z.boolean().optional(),
+    udp_timeout: z.union([z.string(), z.number()]).optional(),
+    udp_fragment: z.boolean().optional(),
+    brutal_debug: z.boolean().optional(),
+    // Panel-only metadata for subscription-link port hopping; stripped before the node.
+    port_hopping_range: z.string().optional(),
     obfs: obfsSchema.optional(),
-    masquerade: z
-        .string()
-        .refine(v => /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(v), {
-        message: "masquerade must be a full URL including a scheme, e.g. https://example.com (a bare domain is rejected by sing-box itself with 'unknown masquerade URL scheme')",
-    })
-        .optional(),
+    masquerade: masqueradeSchema.optional(),
     tls: tlsSchema
 })
     .catchall(jsonValueSchema);

@@ -13,6 +13,9 @@ export function createHysteria2InboundConfig(options: CreateHysteria2InboundOpti
   const tls: Record<string, JsonValue> = { enabled: true };
   if (options.tls.serverName) tls.server_name = options.tls.serverName;
   if (options.tls.alpn && options.tls.alpn.length > 0) tls.alpn = [...options.tls.alpn];
+  if (options.tls.minVersion) tls.min_version = options.tls.minVersion;
+  if (options.tls.maxVersion) tls.max_version = options.tls.maxVersion;
+  if (options.tls.cipherSuites && options.tls.cipherSuites.length > 0) tls.cipher_suites = [...options.tls.cipherSuites];
   // Path-mode fields are emitted whenever present (even ""), mirroring the Xray inbound TLS
   // certificate path/content toggle, which always writes both keys once that mode is chosen.
   if (options.tls.certificatePath !== undefined) tls.certificate_path = options.tls.certificatePath;
@@ -23,6 +26,9 @@ export function createHysteria2InboundConfig(options: CreateHysteria2InboundOpti
   if (options.tls.key !== undefined) {
     tls.key = (typeof options.tls.key === "string" ? options.tls.key : [...options.tls.key]) as JsonValue;
   }
+  // ech/acme are prebuilt by the form layer and assigned verbatim; both are off by default.
+  if (options.tls.ech) tls.ech = options.tls.ech;
+  if (options.tls.acme) tls.acme = options.tls.acme;
 
   const inbound: Record<string, JsonValue> = {
     type: "hysteria2",
@@ -38,10 +44,15 @@ export function createHysteria2InboundConfig(options: CreateHysteria2InboundOpti
   if (options.upMbps !== undefined) inbound.up_mbps = options.upMbps;
   if (options.downMbps !== undefined) inbound.down_mbps = options.downMbps;
   if (options.ignoreClientBandwidth !== undefined) inbound.ignore_client_bandwidth = options.ignoreClientBandwidth;
+  if (options.udpTimeout) inbound.udp_timeout = options.udpTimeout;
+  if (options.udpFragment !== undefined) inbound.udp_fragment = options.udpFragment;
+  if (options.brutalDebug !== undefined) inbound.brutal_debug = options.brutalDebug;
   if (options.obfs) {
     inbound.obfs = { type: "salamander", password: options.obfs.password } as JsonValue;
   }
-  if (options.masquerade) inbound.masquerade = options.masquerade;
+  if (options.masquerade) inbound.masquerade = options.masquerade as JsonValue;
+  // Panel-only metadata for subscription-link port hopping; the panel strips it before the node.
+  if (options.portHoppingRange) inbound.port_hopping_range = options.portHoppingRange;
 
   return inbound as SingBoxHysteria2Inbound;
 }

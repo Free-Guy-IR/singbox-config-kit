@@ -37,5 +37,6 @@ export type {
 export type {
   HysteriaInboundDraft,
   SingBoxCertMode,
+  SingBoxMasqueradeType,
   SingBoxCoreDraft
 } from "./form.js";
