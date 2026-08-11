@@ -1,43 +1,135 @@
 import { assertValidSingBoxCoreConfig } from "./validation.js";
-export function createHysteria2InboundConfig(options) {
+/** Builds the shared `tls` wire object from camelCase options. Returns undefined when TLS is off. */
+function buildTls(options, forceEnabled = false) {
+    if (!options)
+        return forceEnabled ? { enabled: true } : undefined;
+    if (options.enabled === false && !forceEnabled)
+        return undefined;
     const tls = { enabled: true };
-    if (options.tls.serverName)
-        tls.server_name = options.tls.serverName;
-    if (options.tls.alpn && options.tls.alpn.length > 0)
-        tls.alpn = [...options.tls.alpn];
-    if (options.tls.minVersion)
-        tls.min_version = options.tls.minVersion;
-    if (options.tls.maxVersion)
-        tls.max_version = options.tls.maxVersion;
-    if (options.tls.cipherSuites && options.tls.cipherSuites.length > 0)
-        tls.cipher_suites = [...options.tls.cipherSuites];
+    if (options.serverName)
+        tls.server_name = options.serverName;
+    if (options.alpn && options.alpn.length > 0)
+        tls.alpn = [...options.alpn];
+    if (options.minVersion)
+        tls.min_version = options.minVersion;
+    if (options.maxVersion)
+        tls.max_version = options.maxVersion;
+    if (options.cipherSuites && options.cipherSuites.length > 0)
+        tls.cipher_suites = [...options.cipherSuites];
     // Path-mode fields are emitted whenever present (even ""), mirroring the Xray inbound TLS
     // certificate path/content toggle, which always writes both keys once that mode is chosen.
-    if (options.tls.certificatePath !== undefined)
-        tls.certificate_path = options.tls.certificatePath;
-    if (options.tls.keyPath !== undefined)
-        tls.key_path = options.tls.keyPath;
-    if (options.tls.certificate !== undefined) {
-        tls.certificate = (typeof options.tls.certificate === "string" ? options.tls.certificate : [...options.tls.certificate]);
+    if (options.certificatePath !== undefined)
+        tls.certificate_path = options.certificatePath;
+    if (options.keyPath !== undefined)
+        tls.key_path = options.keyPath;
+    if (options.certificate !== undefined) {
+        tls.certificate = (typeof options.certificate === "string" ? options.certificate : [...options.certificate]);
     }
-    if (options.tls.key !== undefined) {
-        tls.key = (typeof options.tls.key === "string" ? options.tls.key : [...options.tls.key]);
+    if (options.key !== undefined) {
+        tls.key = (typeof options.key === "string" ? options.key : [...options.key]);
     }
-    // ech/acme are prebuilt by the form layer and assigned verbatim; both are off by default.
-    if (options.tls.ech)
-        tls.ech = options.tls.ech;
-    if (options.tls.acme)
-        tls.acme = options.tls.acme;
-    const inbound = {
-        type: "hysteria2",
+    // ech/acme/utls/reality are prebuilt by the form layer and assigned verbatim; all off by default.
+    if (options.ech)
+        tls.ech = options.ech;
+    if (options.acme)
+        tls.acme = options.acme;
+    if (options.utls)
+        tls.utls = options.utls;
+    if (options.reality)
+        tls.reality = options.reality;
+    return tls;
+}
+/** Builds the shared V2Ray `transport` wire object. Returns undefined for tcp (no transport). */
+function buildTransport(options) {
+    if (!options || !options.type)
+        return undefined;
+    const transport = { type: options.type };
+    switch (options.type) {
+        case "ws":
+            if (options.path)
+                transport.path = options.path;
+            if (options.host)
+                transport.headers = { Host: options.host };
+            break;
+        case "httpupgrade":
+            if (options.path)
+                transport.path = options.path;
+            if (options.host)
+                transport.host = options.host;
+            break;
+        case "grpc":
+            if (options.serviceName)
+                transport.service_name = options.serviceName;
+            break;
+        case "http":
+            if (options.path)
+                transport.path = options.path;
+            if (options.host)
+                transport.host = [options.host];
+            if (options.method)
+                transport.method = options.method;
+            break;
+    }
+    return transport;
+}
+/** Common head shared by every inbound: type/tag/listen/listen_port and the always-empty users. */
+function inboundHead(type, options) {
+    return {
+        type,
         tag: options.tag,
         listen: options.listen ?? "::",
         listen_port: options.listenPort,
         // The panel injects real users into the running node config at sync time; this kit
         // never represents or edits users, so it is always emitted empty here.
-        users: [],
-        tls: tls
+        users: []
     };
+}
+export function createVlessInboundConfig(options) {
+    const inbound = inboundHead("vless", options);
+    const tls = buildTls(options.tls);
+    if (tls)
+        inbound.tls = tls;
+    const transport = buildTransport(options.transport);
+    if (transport)
+        inbound.transport = transport;
+    return inbound;
+}
+export function createVmessInboundConfig(options) {
+    const inbound = inboundHead("vmess", options);
+    const tls = buildTls(options.tls);
+    if (tls)
+        inbound.tls = tls;
+    const transport = buildTransport(options.transport);
+    if (transport)
+        inbound.transport = transport;
+    return inbound;
+}
+export function createTrojanInboundConfig(options) {
+    const inbound = inboundHead("trojan", options);
+    const tls = buildTls(options.tls);
+    if (tls)
+        inbound.tls = tls;
+    const transport = buildTransport(options.transport);
+    if (transport)
+        inbound.transport = transport;
+    return inbound;
+}
+export function createShadowsocksInboundConfig(options) {
+    const inbound = inboundHead("shadowsocks", options);
+    inbound.method = options.method;
+    inbound.password = options.password ?? "";
+    return inbound;
+}
+export function createTuicInboundConfig(options) {
+    const inbound = inboundHead("tuic", options);
+    if (options.congestionControl)
+        inbound.congestion_control = options.congestionControl;
+    inbound.tls = buildTls(options.tls, true) ?? { enabled: true };
+    return inbound;
+}
+export function createHysteria2InboundConfig(options) {
+    const inbound = inboundHead("hysteria2", options);
+    inbound.tls = buildTls(options.tls, true) ?? { enabled: true };
     if (options.upMbps !== undefined)
         inbound.up_mbps = options.upMbps;
     if (options.downMbps !== undefined)
@@ -60,10 +152,32 @@ export function createHysteria2InboundConfig(options) {
         inbound.port_hopping_range = options.portHoppingRange;
     return inbound;
 }
+/** Dispatches to the per-protocol inbound builder based on the options' discriminant. */
+export function createInboundConfig(options) {
+    switch (options.protocol) {
+        case "vless":
+            return createVlessInboundConfig(options);
+        case "vmess":
+            return createVmessInboundConfig(options);
+        case "trojan":
+            return createTrojanInboundConfig(options);
+        case "shadowsocks":
+            return createShadowsocksInboundConfig(options);
+        case "tuic":
+            return createTuicInboundConfig(options);
+        case "hysteria2":
+        case undefined:
+            return createHysteria2InboundConfig(options);
+        default: {
+            const exhaustive = options;
+            throw new Error(`unknown sing-box inbound protocol: ${JSON.stringify(exhaustive)}`);
+        }
+    }
+}
 function configFromOptions(options) {
     return {
         log: { level: options.logLevel ?? "info" },
-        inbounds: options.inbounds.map(createHysteria2InboundConfig),
+        inbounds: options.inbounds.map(createInboundConfig),
         outbounds: [{ type: "direct" }]
     };
 }

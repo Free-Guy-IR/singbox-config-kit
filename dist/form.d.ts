@@ -1,14 +1,85 @@
-import type { SingBoxCoreConfig, SingBoxValidationIssue } from "./types.js";
+import type { CreateInboundOptions, SingBoxCoreConfig, SingBoxValidationIssue } from "./types.js";
 export type SingBoxCertMode = "path" | "content";
-/**
- * Form-state shape for a single Hysteria2 inbound, distinct from the persisted JSON shape.
- * `certMode` is UI-only: it decides whether `certificateFile`/`keyFile` (-> certificate_path/
- * key_path) or `certificate`/`key` (-> inline PEM content) are serialized on save, mirroring
- * the existing Xray inbound TLS certificate path/content toggle.
- */
 /** Masquerade long-form kind. "" keeps the bare-URL string shorthand (`masquerade`). */
 export type SingBoxMasqueradeType = "" | "file" | "proxy" | "string";
+export type SingBoxTransportType = "" | "ws" | "grpc" | "http" | "httpupgrade";
+/** The protocols the sing-box core editor can create. */
+export type SingBoxProtocol = "vless" | "vmess" | "trojan" | "shadowsocks" | "tuic" | "hysteria2";
+type EchDraftFields = {
+    readonly echEnabled: boolean;
+    readonly echKey: string;
+    readonly echPqSignatureSchemesEnabled: boolean;
+    readonly echDynamicRecordSizingDisabled: boolean;
+};
+type AcmeDraftFields = {
+    readonly acmeEnabled: boolean;
+    readonly acmeDomain: readonly string[];
+    readonly acmeEmail: string;
+    readonly acmeProvider: string;
+    readonly acmeDns01Provider: string;
+    readonly acmeDns01ApiToken: string;
+    readonly acmeDns01AccessKeyId: string;
+    readonly acmeDns01AccessKeySecret: string;
+};
+/** Shared TLS form fields (superset used by vless/vmess/trojan/tuic; also structurally covers hysteria2). */
+export type TlsDraftFields = EchDraftFields & AcmeDraftFields & {
+    readonly tlsEnabled: boolean;
+    readonly tlsServerName: string;
+    readonly tlsAlpn: readonly string[];
+    readonly tlsMinVersion: string;
+    readonly tlsMaxVersion: string;
+    readonly tlsCipherSuites: readonly string[];
+    readonly certMode: SingBoxCertMode;
+    readonly certificateFile: string;
+    readonly keyFile: string;
+    readonly certificate: string;
+    readonly key: string;
+    readonly utlsEnabled: boolean;
+    readonly utlsFingerprint: string;
+    readonly realityEnabled: boolean;
+    readonly realityHandshakeServer: string;
+    readonly realityHandshakePort: string;
+    readonly realityPrivateKey: string;
+    readonly realityShortId: readonly string[];
+    readonly realityMaxTimeDifference: string;
+};
+/** Shared V2Ray transport form fields (vless/vmess/trojan). */
+export type TransportDraftFields = {
+    readonly transportType: SingBoxTransportType;
+    readonly transportPath: string;
+    readonly transportHost: string;
+    readonly transportServiceName: string;
+    readonly transportMethod: string;
+};
+type InboundBaseDraft = {
+    readonly tag: string;
+    readonly listen: string;
+    readonly listenPort: number | string;
+};
+export type VlessInboundDraft = InboundBaseDraft & TlsDraftFields & TransportDraftFields & {
+    readonly protocol: "vless";
+};
+export type VmessInboundDraft = InboundBaseDraft & TlsDraftFields & TransportDraftFields & {
+    readonly protocol: "vmess";
+};
+export type TrojanInboundDraft = InboundBaseDraft & TlsDraftFields & TransportDraftFields & {
+    readonly protocol: "trojan";
+};
+export type TuicInboundDraft = InboundBaseDraft & TlsDraftFields & {
+    readonly protocol: "tuic";
+    readonly congestionControl: string;
+};
+export type ShadowsocksInboundDraft = InboundBaseDraft & {
+    readonly protocol: "shadowsocks";
+    readonly method: string;
+    readonly password: string;
+};
+/**
+ * Form-state shape for a single Hysteria2 inbound. `certMode` is UI-only. Unchanged from the
+ * original Hysteria2-only kit except for the `protocol` discriminant added for the union.
+ */
 export type HysteriaInboundDraft = {
+    readonly protocol: "hysteria2";
     readonly tag: string;
     readonly listen: string;
     readonly listenPort: number | string;
@@ -51,17 +122,30 @@ export type HysteriaInboundDraft = {
     readonly acmeDns01AccessKeyId: string;
     readonly acmeDns01AccessKeySecret: string;
 };
+export type SingBoxInboundDraft = VlessInboundDraft | VmessInboundDraft | TrojanInboundDraft | ShadowsocksInboundDraft | TuicInboundDraft | HysteriaInboundDraft;
 export type SingBoxCoreDraft = {
     readonly logLevel: string;
-    readonly inbounds: readonly HysteriaInboundDraft[];
+    readonly inbounds: readonly SingBoxInboundDraft[];
 };
+export declare function createDefaultVlessInboundDraft(existingTags?: readonly string[]): VlessInboundDraft;
+export declare function createDefaultVmessInboundDraft(existingTags?: readonly string[]): VmessInboundDraft;
+export declare function createDefaultTrojanInboundDraft(existingTags?: readonly string[]): TrojanInboundDraft;
+export declare function createDefaultTuicInboundDraft(existingTags?: readonly string[]): TuicInboundDraft;
+export declare function createDefaultShadowsocksInboundDraft(existingTags?: readonly string[]): ShadowsocksInboundDraft;
 export declare function createDefaultHysteria2InboundDraft(existingTags?: readonly string[]): HysteriaInboundDraft;
+/** Default draft for a given protocol (used by the "add inbound" / protocol-switch flows). */
+export declare function createDefaultInboundDraft(protocol: SingBoxProtocol, existingTags?: readonly string[]): SingBoxInboundDraft;
 export declare function createDefaultSingBoxCoreDraft(): SingBoxCoreDraft;
-/** Mirrors the validation.ts semantic rules, at the draft/form level (pre-serialization). */
+export declare function inboundOptionsFromDraft(draft: SingBoxInboundDraft): CreateInboundOptions;
+export declare function validateInboundDraft(draft: SingBoxInboundDraft, index: number, allTags: readonly string[]): SingBoxValidationIssue[];
+/** Mirrors the validation.ts semantic rules for hysteria2, at the draft/form level. */
 export declare function validateHysteria2InboundDraft(draft: HysteriaInboundDraft, index: number, allTags: readonly string[]): SingBoxValidationIssue[];
 export declare function validateSingBoxCoreDraft(draft: SingBoxCoreDraft): SingBoxValidationIssue[];
 export declare function createSingBoxCoreConfigFromDraft(draft: SingBoxCoreDraft): SingBoxCoreConfig;
 export declare function generateSingBoxCoreConfigJsonFromDraft(draft: SingBoxCoreDraft, space?: number): string;
 /** Exposed for callers that build a single inbound's config JSON without a full draft (e.g. previews). */
+export declare function createInboundConfigFromDraft(draft: SingBoxInboundDraft): import("./types.js").SingBoxInbound;
+/** Back-compat alias for the original single-protocol export name. */
 export declare function createHysteria2InboundConfigFromDraft(draft: HysteriaInboundDraft): import("./types.js").SingBoxHysteria2Inbound;
+export {};
 //# sourceMappingURL=form.d.ts.map

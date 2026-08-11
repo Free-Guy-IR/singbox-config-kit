@@ -3,6 +3,7 @@ import type {
   JsonValue,
   SingBoxCoreConfig,
   SingBoxHysteria2Inbound,
+  SingBoxInboundType,
   SingBoxValidationIssue,
   SingBoxValidationResult
 } from "./types.js";
@@ -18,65 +19,29 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
   ])
 );
 
-const tlsSchema = z
-  .object({
-    enabled: z.boolean(),
-    server_name: z.string().optional(),
-    alpn: z.array(z.string()).optional(),
-    min_version: z.string().optional(),
-    max_version: z.string().optional(),
-    cipher_suites: z.array(z.string()).optional(),
-    certificate_path: z.string().optional(),
-    key_path: z.string().optional(),
-    certificate: z.union([z.string(), z.array(z.string())]).optional(),
-    key: z.union([z.string(), z.array(z.string())]).optional(),
-    // ech/acme are nested objects handled structurally by the node/core; passed through as-is.
-    ech: z.record(jsonValueSchema).optional(),
-    acme: z.record(jsonValueSchema).optional()
-  })
-  .catchall(jsonValueSchema);
+/** The inbound `type` values this kit recognizes. */
+const SUPPORTED_INBOUND_TYPES: readonly SingBoxInboundType[] = [
+  "vless",
+  "vmess",
+  "trojan",
+  "shadowsocks",
+  "tuic",
+  "hysteria2"
+];
 
-const masqueradeObjectSchema = z
+/**
+ * Generic inbound schema: strict about the fields the rest of the panel keys on
+ * (type/tag/listen_port), permissive (`.catchall`) about everything else, since the
+ * per-protocol wire shape is large and validated structurally at build time. Per-type
+ * semantic rules (tls required, shadowsocks method required, ...) run in normalizeConfig.
+ */
+const inboundSchema = z
   .object({
-    type: z.enum(["file", "proxy", "string"])
-  })
-  .catchall(jsonValueSchema);
-
-const masqueradeSchema = z.union([
-  z.string().refine(v => /^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(v), {
-    message: "masquerade must be a full URL including a scheme, e.g. https://example.com (a bare domain is rejected by sing-box itself with 'unknown masquerade URL scheme')"
-  }),
-  masqueradeObjectSchema
-]);
-
-const obfsSchema = z
-  .object({
-    type: z.literal("salamander"),
-    password: z.string()
-  })
-  .catchall(jsonValueSchema);
-
-// Scope (v1): only the hysteria2 inbound type is recognized, mirroring the Python-side
-// SingBoxConfig docstring ("unlike XRayConfig's network_handlers registry, there is
-// intentionally no generic multi-protocol resolver yet").
-const hysteria2InboundSchema = z
-  .object({
-    type: z.literal("hysteria2"),
+    type: z.enum(SUPPORTED_INBOUND_TYPES as unknown as [string, ...string[]]),
     tag: z.string(),
     listen: z.string().optional(),
     listen_port: z.number(),
-    users: z.array(jsonValueSchema).optional(),
-    up_mbps: z.number().optional(),
-    down_mbps: z.number().optional(),
-    ignore_client_bandwidth: z.boolean().optional(),
-    udp_timeout: z.union([z.string(), z.number()]).optional(),
-    udp_fragment: z.boolean().optional(),
-    brutal_debug: z.boolean().optional(),
-    // Panel-only metadata for subscription-link port hopping; stripped before the node.
-    port_hopping_range: z.string().optional(),
-    obfs: obfsSchema.optional(),
-    masquerade: masqueradeSchema.optional(),
-    tls: tlsSchema
+    users: z.array(jsonValueSchema).optional()
   })
   .catchall(jsonValueSchema);
 
@@ -89,7 +54,7 @@ const outboundSchema = z
 const rawSingBoxCoreConfigSchema = z
   .object({
     log: z.record(jsonValueSchema).optional(),
-    inbounds: z.array(hysteria2InboundSchema),
+    inbounds: z.array(inboundSchema),
     outbounds: z.array(outboundSchema)
   })
   .catchall(jsonValueSchema);
@@ -109,19 +74,47 @@ function validateListenPort(value: number, path: string): void {
   }
 }
 
-/** Mirrors SingBoxConfig._validate_hysteria2_inbound: hysteria2 always requires tls.enabled. */
-function validateHysteria2Inbound(inbound: z.infer<typeof hysteria2InboundSchema>, index: number): void {
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** Per-type semantic validation, mirroring the panel-side SingBoxConfig validators. */
+function validateInbound(inbound: z.infer<typeof inboundSchema>, index: number): void {
   const path = `/inbounds/${index}`;
   const tag = inbound.tag.trim();
   if (!tag) {
     throw new Error(`${path}/tag: all inbounds must have a unique tag.`);
   }
   validateListenPort(inbound.listen_port, `${path}/listen_port`);
-  if (inbound.tls.enabled !== true) {
-    throw new Error(`${path}/tls/enabled: ${tag}: hysteria2 inbound requires tls to be enabled.`);
-  }
-  if (inbound.obfs && !inbound.obfs.password.trim()) {
-    throw new Error(`${path}/obfs/password: obfs password is required when obfs is configured.`);
+
+  // tls/obfs/method arrive through the schema's permissive `.catchall`, so they are not
+  // on the statically-inferred shape; read them off the raw record.
+  const rec = inbound as Record<string, unknown>;
+  const tls = asObject(rec.tls);
+  switch (inbound.type) {
+    case "hysteria2": {
+      if (!tls || tls.enabled !== true) {
+        throw new Error(`${path}/tls/enabled: ${tag}: hysteria2 inbound requires tls to be enabled.`);
+      }
+      const obfs = asObject(rec.obfs);
+      if (obfs && (typeof obfs.password !== "string" || !obfs.password.trim())) {
+        throw new Error(`${path}/obfs/password: obfs password is required when obfs is configured.`);
+      }
+      break;
+    }
+    case "tuic": {
+      if (!tls || tls.enabled !== true) {
+        throw new Error(`${path}/tls/enabled: ${tag}: tuic inbound requires tls to be enabled.`);
+      }
+      break;
+    }
+    case "shadowsocks": {
+      if (typeof rec.method !== "string" || !rec.method.trim()) {
+        throw new Error(`${path}/method: ${tag}: shadowsocks inbound requires a method.`);
+      }
+      break;
+    }
+    // vless/vmess/trojan: tls is optional; nothing extra required at this layer.
   }
 }
 
@@ -136,7 +129,7 @@ function normalizeConfig(input: z.infer<typeof rawSingBoxCoreConfigSchema>): Sin
 
   const seenTags = new Set<string>();
   input.inbounds.forEach((inbound, index) => {
-    validateHysteria2Inbound(inbound, index);
+    validateInbound(inbound, index);
     const tag = inbound.tag.trim();
     if (seenTags.has(tag)) {
       throw new Error(`/inbounds/${index}/tag: duplicate inbound tag: ${tag}.`);
