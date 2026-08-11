@@ -1,4 +1,4 @@
-import type { CreateInboundOptions, SingBoxCoreConfig, SingBoxValidationIssue } from "./types.js";
+import type { CreateInboundOptions, SingBoxCoreConfig, SingBoxDns, SingBoxDnsRule, SingBoxDnsServer, SingBoxExperimental, SingBoxOutbound, SingBoxRoute, SingBoxRouteRule, SingBoxRuleSet, SingBoxValidationIssue, SingBoxVersion } from "./types.js";
 export type SingBoxCertMode = "path" | "content";
 /** Masquerade long-form kind. "" keeps the bare-URL string shorthand (`masquerade`). */
 export type SingBoxMasqueradeType = "" | "file" | "proxy" | "string";
@@ -125,7 +125,19 @@ export type HysteriaInboundDraft = {
 export type SingBoxInboundDraft = VlessInboundDraft | VmessInboundDraft | TrojanInboundDraft | ShadowsocksInboundDraft | TuicInboundDraft | HysteriaInboundDraft;
 export type SingBoxCoreDraft = {
     readonly logLevel: string;
+    /** sing-box release the config targets (drives the DNS-server + route-action shape). Default 1.12. */
+    readonly singboxVersion: SingBoxVersion;
     readonly inbounds: readonly SingBoxInboundDraft[];
+    /**
+     * Outbounds/route/dns/experimental are stored WIRE-SHAPED (snake_case, exactly what sing-box
+     * consumes). The dashboard section editors read/write these objects directly and the core
+     * builder spreads them verbatim, so anything the UI doesn't model round-trips untouched.
+     * Rule Sets live inside `route.rule_set`; Balancers are the `selector`/`urltest` outbounds.
+     */
+    readonly outbounds: readonly SingBoxOutbound[];
+    readonly route: SingBoxRoute;
+    readonly dns: SingBoxDns;
+    readonly experimental: SingBoxExperimental;
 };
 export declare function createDefaultVlessInboundDraft(existingTags?: readonly string[]): VlessInboundDraft;
 export declare function createDefaultVmessInboundDraft(existingTags?: readonly string[]): VmessInboundDraft;
@@ -136,6 +148,19 @@ export declare function createDefaultHysteria2InboundDraft(existingTags?: readon
 /** Default draft for a given protocol (used by the "add inbound" / protocol-switch flows). */
 export declare function createDefaultInboundDraft(protocol: SingBoxProtocol, existingTags?: readonly string[]): SingBoxInboundDraft;
 export declare function createDefaultSingBoxCoreDraft(): SingBoxCoreDraft;
+/** Outbound types the sing-box editor can add. `block`/`dns` are legacy (route actions ≥1.11). */
+export declare const SINGBOX_OUTBOUND_TYPES: readonly ["direct", "block", "socks", "http", "shadowsocks", "vmess", "vless", "trojan", "hysteria2", "tuic", "anytls", "ssh", "dns", "selector", "urltest"];
+export type SingBoxOutboundType = (typeof SINGBOX_OUTBOUND_TYPES)[number];
+/** selector/urltest outbounds are the "balancers" of sing-box (member picking). */
+export declare const SINGBOX_BALANCER_OUTBOUND_TYPES: readonly SingBoxOutboundType[];
+export declare function createDefaultSingBoxOutbound(type: SingBoxOutboundType, existingTags?: readonly string[]): SingBoxOutbound;
+export declare function createDefaultSingBoxRouteRule(): SingBoxRouteRule;
+export declare const SINGBOX_RULE_SET_TYPES: readonly ["remote", "local", "inline"];
+export type SingBoxRuleSetType = (typeof SINGBOX_RULE_SET_TYPES)[number];
+export declare function createDefaultSingBoxRuleSet(type: SingBoxRuleSetType, existingTags?: readonly string[]): SingBoxRuleSet;
+/** DNS server default. 1.12 uses typed servers ({type,server}); 1.11 uses {address}. */
+export declare function createDefaultSingBoxDnsServer(version: SingBoxVersion, existingTags?: readonly string[]): SingBoxDnsServer;
+export declare function createDefaultSingBoxDnsRule(): SingBoxDnsRule;
 export declare function inboundOptionsFromDraft(draft: SingBoxInboundDraft): CreateInboundOptions;
 export declare function validateInboundDraft(draft: SingBoxInboundDraft, index: number, allTags: readonly string[]): SingBoxValidationIssue[];
 /** Mirrors the validation.ts semantic rules for hysteria2, at the draft/form level. */

@@ -19,6 +19,14 @@ export {
   createDefaultTuicInboundDraft,
   createDefaultInboundDraft,
   createDefaultSingBoxCoreDraft,
+  createDefaultSingBoxOutbound,
+  createDefaultSingBoxRouteRule,
+  createDefaultSingBoxRuleSet,
+  createDefaultSingBoxDnsServer,
+  createDefaultSingBoxDnsRule,
+  SINGBOX_OUTBOUND_TYPES,
+  SINGBOX_BALANCER_OUTBOUND_TYPES,
+  SINGBOX_RULE_SET_TYPES,
   createHysteria2InboundConfigFromDraft,
   createInboundConfigFromDraft,
   inboundOptionsFromDraft,
@@ -65,6 +73,14 @@ export type {
   SingBoxUtls,
   SingBoxTransport,
   SingBoxOutbound,
+  SingBoxVersion,
+  SingBoxRoute,
+  SingBoxRouteRule,
+  SingBoxRuleSet,
+  SingBoxDns,
+  SingBoxDnsServer,
+  SingBoxDnsRule,
+  SingBoxExperimental,
   SingBoxValidationIssue,
   SingBoxValidationResult
 } from "./types.js";
@@ -84,5 +100,7 @@ export type {
   SingBoxTransportType,
   TlsDraftFields,
   TransportDraftFields,
-  SingBoxCoreDraft
+  SingBoxCoreDraft,
+  SingBoxOutboundType,
+  SingBoxRuleSetType
 } from "./form.js";

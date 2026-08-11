@@ -291,7 +291,114 @@ export function createDefaultInboundDraft(protocol, existingTags = []) {
     }
 }
 export function createDefaultSingBoxCoreDraft() {
-    return { logLevel: "info", inbounds: [createDefaultHysteria2InboundDraft([])] };
+    return {
+        logLevel: "info",
+        singboxVersion: "1.12",
+        inbounds: [createDefaultHysteria2InboundDraft([])],
+        outbounds: [],
+        route: {},
+        dns: {},
+        experimental: {}
+    };
+}
+// ---------------------------------------------------------------------------
+// Default factories for the outbounds / route / rule-sets / dns sections.
+// These produce WIRE-SHAPED objects the dashboard editors mutate in place.
+// ---------------------------------------------------------------------------
+function uniqueTag(base, existing) {
+    if (!existing.includes(base))
+        return base;
+    let n = 2;
+    while (existing.includes(`${base}-${n}`))
+        n += 1;
+    return `${base}-${n}`;
+}
+/** Outbound types the sing-box editor can add. `block`/`dns` are legacy (route actions ≥1.11). */
+export const SINGBOX_OUTBOUND_TYPES = [
+    "direct", "block", "socks", "http", "shadowsocks", "vmess", "vless", "trojan",
+    "hysteria2", "tuic", "anytls", "ssh", "dns", "selector", "urltest"
+];
+/** selector/urltest outbounds are the "balancers" of sing-box (member picking). */
+export const SINGBOX_BALANCER_OUTBOUND_TYPES = ["selector", "urltest"];
+export function createDefaultSingBoxOutbound(type, existingTags = []) {
+    const o = { type, tag: uniqueTag(type, existingTags) };
+    switch (type) {
+        case "direct":
+        case "block":
+        case "dns":
+            break;
+        case "selector":
+            o.outbounds = [];
+            break;
+        case "urltest":
+            o.outbounds = [];
+            o.url = "https://www.gstatic.com/generate_204";
+            o.interval = "3m";
+            break;
+        case "socks":
+        case "http":
+            o.server = "";
+            o.server_port = 1080;
+            break;
+        case "shadowsocks":
+            o.server = "";
+            o.server_port = 443;
+            o.method = "aes-128-gcm";
+            o.password = "";
+            break;
+        case "vmess":
+            o.server = "";
+            o.server_port = 443;
+            o.uuid = "";
+            o.security = "auto";
+            break;
+        case "vless":
+            o.server = "";
+            o.server_port = 443;
+            o.uuid = "";
+            break;
+        case "trojan":
+        case "hysteria2":
+        case "anytls":
+            o.server = "";
+            o.server_port = 443;
+            o.password = "";
+            break;
+        case "tuic":
+            o.server = "";
+            o.server_port = 443;
+            o.uuid = "";
+            o.password = "";
+            break;
+        case "ssh":
+            o.server = "";
+            o.server_port = 22;
+            o.user = "";
+            o.password = "";
+            break;
+    }
+    return o;
+}
+export function createDefaultSingBoxRouteRule() {
+    // Empty matcher; the editor fills matchers + the action (outbound tag) before it's useful.
+    return {};
+}
+export const SINGBOX_RULE_SET_TYPES = ["remote", "local", "inline"];
+export function createDefaultSingBoxRuleSet(type, existingTags = []) {
+    const tag = uniqueTag("rule-set", existingTags);
+    if (type === "remote")
+        return { type, tag, format: "binary", url: "", download_detour: "" };
+    if (type === "local")
+        return { type, tag, format: "binary", path: "" };
+    return { type: "inline", tag, rules: [] };
+}
+/** DNS server default. 1.12 uses typed servers ({type,server}); 1.11 uses {address}. */
+export function createDefaultSingBoxDnsServer(version, existingTags = []) {
+    const tag = uniqueTag("dns", existingTags);
+    return version === "1.12" ? { tag, type: "udp", server: "8.8.8.8" } : { tag, address: "8.8.8.8" };
+}
+export function createDefaultSingBoxDnsRule() {
+    return {};
 }
 // ---------------------------------------------------------------------------
 // Hysteria2 masquerade (unchanged behaviour from the original kit).
@@ -536,7 +643,12 @@ export function createSingBoxCoreConfigFromDraft(draft) {
     }
     return createSingBoxCoreConfig({
         logLevel: draft.logLevel,
-        inbounds: draft.inbounds.map(inboundOptionsFromDraft)
+        singboxVersion: draft.singboxVersion,
+        inbounds: draft.inbounds.map(inboundOptionsFromDraft),
+        outbounds: draft.outbounds,
+        route: draft.route,
+        dns: draft.dns,
+        experimental: draft.experimental
     });
 }
 export function generateSingBoxCoreConfigJsonFromDraft(draft, space = 2) {

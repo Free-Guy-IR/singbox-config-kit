@@ -10,7 +10,16 @@ import type {
   JsonObject,
   JsonValue,
   SingBoxCoreConfig,
-  SingBoxValidationIssue
+  SingBoxDns,
+  SingBoxDnsRule,
+  SingBoxDnsServer,
+  SingBoxExperimental,
+  SingBoxOutbound,
+  SingBoxRoute,
+  SingBoxRouteRule,
+  SingBoxRuleSet,
+  SingBoxValidationIssue,
+  SingBoxVersion
 } from "./types.js";
 
 export type SingBoxCertMode = "path" | "content";
@@ -158,7 +167,19 @@ export type SingBoxInboundDraft =
 
 export type SingBoxCoreDraft = {
   readonly logLevel: string;
+  /** sing-box release the config targets (drives the DNS-server + route-action shape). Default 1.12. */
+  readonly singboxVersion: SingBoxVersion;
   readonly inbounds: readonly SingBoxInboundDraft[];
+  /**
+   * Outbounds/route/dns/experimental are stored WIRE-SHAPED (snake_case, exactly what sing-box
+   * consumes). The dashboard section editors read/write these objects directly and the core
+   * builder spreads them verbatim, so anything the UI doesn't model round-trips untouched.
+   * Rule Sets live inside `route.rule_set`; Balancers are the `selector`/`urltest` outbounds.
+   */
+  readonly outbounds: readonly SingBoxOutbound[];
+  readonly route: SingBoxRoute;
+  readonly dns: SingBoxDns;
+  readonly experimental: SingBoxExperimental;
 };
 
 function issue(path: string, code: string, message: string): SingBoxValidationIssue {
@@ -464,7 +485,122 @@ export function createDefaultInboundDraft(protocol: SingBoxProtocol, existingTag
 }
 
 export function createDefaultSingBoxCoreDraft(): SingBoxCoreDraft {
-  return { logLevel: "info", inbounds: [createDefaultHysteria2InboundDraft([])] };
+  return {
+    logLevel: "info",
+    singboxVersion: "1.12",
+    inbounds: [createDefaultHysteria2InboundDraft([])],
+    outbounds: [],
+    route: {},
+    dns: {},
+    experimental: {}
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Default factories for the outbounds / route / rule-sets / dns sections.
+// These produce WIRE-SHAPED objects the dashboard editors mutate in place.
+// ---------------------------------------------------------------------------
+
+function uniqueTag(base: string, existing: readonly string[]): string {
+  if (!existing.includes(base)) return base;
+  let n = 2;
+  while (existing.includes(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
+}
+
+/** Outbound types the sing-box editor can add. `block`/`dns` are legacy (route actions ≥1.11). */
+export const SINGBOX_OUTBOUND_TYPES = [
+  "direct", "block", "socks", "http", "shadowsocks", "vmess", "vless", "trojan",
+  "hysteria2", "tuic", "anytls", "ssh", "dns", "selector", "urltest"
+] as const;
+export type SingBoxOutboundType = (typeof SINGBOX_OUTBOUND_TYPES)[number];
+
+/** selector/urltest outbounds are the "balancers" of sing-box (member picking). */
+export const SINGBOX_BALANCER_OUTBOUND_TYPES: readonly SingBoxOutboundType[] = ["selector", "urltest"];
+
+export function createDefaultSingBoxOutbound(type: SingBoxOutboundType, existingTags: readonly string[] = []): SingBoxOutbound {
+  const o: Record<string, JsonValue> = { type, tag: uniqueTag(type, existingTags) };
+  switch (type) {
+    case "direct":
+    case "block":
+    case "dns":
+      break;
+    case "selector":
+      o.outbounds = [];
+      break;
+    case "urltest":
+      o.outbounds = [];
+      o.url = "https://www.gstatic.com/generate_204";
+      o.interval = "3m";
+      break;
+    case "socks":
+    case "http":
+      o.server = "";
+      o.server_port = 1080;
+      break;
+    case "shadowsocks":
+      o.server = "";
+      o.server_port = 443;
+      o.method = "aes-128-gcm";
+      o.password = "";
+      break;
+    case "vmess":
+      o.server = "";
+      o.server_port = 443;
+      o.uuid = "";
+      o.security = "auto";
+      break;
+    case "vless":
+      o.server = "";
+      o.server_port = 443;
+      o.uuid = "";
+      break;
+    case "trojan":
+    case "hysteria2":
+    case "anytls":
+      o.server = "";
+      o.server_port = 443;
+      o.password = "";
+      break;
+    case "tuic":
+      o.server = "";
+      o.server_port = 443;
+      o.uuid = "";
+      o.password = "";
+      break;
+    case "ssh":
+      o.server = "";
+      o.server_port = 22;
+      o.user = "";
+      o.password = "";
+      break;
+  }
+  return o as SingBoxOutbound;
+}
+
+export function createDefaultSingBoxRouteRule(): SingBoxRouteRule {
+  // Empty matcher; the editor fills matchers + the action (outbound tag) before it's useful.
+  return {};
+}
+
+export const SINGBOX_RULE_SET_TYPES = ["remote", "local", "inline"] as const;
+export type SingBoxRuleSetType = (typeof SINGBOX_RULE_SET_TYPES)[number];
+
+export function createDefaultSingBoxRuleSet(type: SingBoxRuleSetType, existingTags: readonly string[] = []): SingBoxRuleSet {
+  const tag = uniqueTag("rule-set", existingTags);
+  if (type === "remote") return { type, tag, format: "binary", url: "", download_detour: "" };
+  if (type === "local") return { type, tag, format: "binary", path: "" };
+  return { type: "inline", tag, rules: [] };
+}
+
+/** DNS server default. 1.12 uses typed servers ({type,server}); 1.11 uses {address}. */
+export function createDefaultSingBoxDnsServer(version: SingBoxVersion, existingTags: readonly string[] = []): SingBoxDnsServer {
+  const tag = uniqueTag("dns", existingTags);
+  return version === "1.12" ? { tag, type: "udp", server: "8.8.8.8" } : { tag, address: "8.8.8.8" };
+}
+
+export function createDefaultSingBoxDnsRule(): SingBoxDnsRule {
+  return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -721,7 +857,12 @@ export function createSingBoxCoreConfigFromDraft(draft: SingBoxCoreDraft): SingB
   }
   return createSingBoxCoreConfig({
     logLevel: draft.logLevel,
-    inbounds: draft.inbounds.map(inboundOptionsFromDraft)
+    singboxVersion: draft.singboxVersion,
+    inbounds: draft.inbounds.map(inboundOptionsFromDraft),
+    outbounds: draft.outbounds,
+    route: draft.route,
+    dns: draft.dns,
+    experimental: draft.experimental
   });
 }
 

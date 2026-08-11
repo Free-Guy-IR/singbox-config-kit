@@ -128,13 +128,56 @@ export type SingBoxHysteria2Inbound = SingBoxInboundCommon & {
 /** Discriminated union of every sing-box inbound type this kit understands. */
 export type SingBoxInbound = SingBoxVlessInbound | SingBoxVmessInbound | SingBoxTrojanInbound | SingBoxShadowsocksInbound | SingBoxTuicInbound | SingBoxHysteria2Inbound;
 export type SingBoxInboundType = SingBoxInbound["type"];
+/** sing-box release the config targets. Drives the 1.11/1.12 DNS-server + route-action shape. */
+export type SingBoxVersion = "1.11" | "1.12";
+/**
+ * Outbound wire object. Modelled loosely (JsonObject + a known `type`/`tag`) so the editor can
+ * carry every outbound kind — direct/block/socks/http/shadowsocks/vmess/vless/trojan/hysteria2/
+ * tuic/anytls/ssh/dns/selector/urltest — and round-trip unknown fields untouched. The node
+ * validates the exact schema; the kit only guarantees `type` (+ `tag` for the referenceable ones).
+ */
 export type SingBoxOutbound = JsonObject & {
     readonly type: string;
+    readonly tag?: string;
 };
+/** A single route rule (matchers + action). Kept as a permissive JsonObject — see SingBoxRoute. */
+export type SingBoxRouteRule = JsonObject;
+/** A route rule-set (inline | local | remote). */
+export type SingBoxRuleSet = JsonObject & {
+    readonly type: string;
+    readonly tag: string;
+};
+/** `route` section. Rules + rule-sets + defaults; permissive so unmodelled keys pass through. */
+export type SingBoxRoute = JsonObject & {
+    readonly rules?: readonly SingBoxRouteRule[];
+    readonly rule_set?: readonly SingBoxRuleSet[];
+    readonly final?: string;
+    readonly auto_detect_interface?: boolean;
+    readonly default_mark?: number;
+};
+/** A DNS server entry. 1.11 uses `{address}`, 1.12 uses `{type,server}`; both allowed here. */
+export type SingBoxDnsServer = JsonObject;
+/** A DNS rule (matchers + target server). */
+export type SingBoxDnsRule = JsonObject;
+/** `dns` section. */
+export type SingBoxDns = JsonObject & {
+    readonly servers?: readonly SingBoxDnsServer[];
+    readonly rules?: readonly SingBoxDnsRule[];
+    readonly final?: string;
+    readonly strategy?: string;
+    readonly disable_cache?: boolean;
+    readonly disable_expire?: boolean;
+    readonly fakeip?: JsonObject;
+};
+/** `experimental` section (clash_api + cache_file). Permissive JsonObject. */
+export type SingBoxExperimental = JsonObject;
 export type SingBoxCoreConfig = JsonObject & {
     readonly log?: JsonObject;
     readonly inbounds: readonly SingBoxInbound[];
     readonly outbounds: readonly SingBoxOutbound[];
+    readonly route?: SingBoxRoute;
+    readonly dns?: SingBoxDns;
+    readonly experimental?: SingBoxExperimental;
 };
 export type SingBoxCorePayload = {
     readonly name: string;
@@ -219,7 +262,13 @@ export type CreateHysteria2InboundOptions = CreateInboundCommonOptions & {
 export type CreateInboundOptions = CreateVlessInboundOptions | CreateVmessInboundOptions | CreateTrojanInboundOptions | CreateShadowsocksInboundOptions | CreateTuicInboundOptions | CreateHysteria2InboundOptions;
 export type CreateSingBoxCoreConfigOptions = {
     readonly logLevel?: string;
+    readonly singboxVersion?: SingBoxVersion;
     readonly inbounds: readonly CreateInboundOptions[];
+    /** Wire-shaped outbounds. When empty/omitted the builder emits a single `{type:"direct"}`. */
+    readonly outbounds?: readonly SingBoxOutbound[];
+    readonly route?: SingBoxRoute;
+    readonly dns?: SingBoxDns;
+    readonly experimental?: SingBoxExperimental;
 };
 export type CreateSingBoxCorePayloadOptions = CreateSingBoxCoreConfigOptions & {
     readonly name?: string;

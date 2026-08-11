@@ -169,12 +169,41 @@ export function createInboundConfig(options: CreateInboundOptions): SingBoxInbou
   }
 }
 
+/** True when a section object has at least one own enumerable key worth emitting. */
+function hasKeys(value: unknown): boolean {
+  return !!value && typeof value === "object" && Object.keys(value as object).length > 0;
+}
+
 function configFromOptions(options: CreateSingBoxCoreConfigOptions): Record<string, JsonValue> {
-  return {
+  // sing-box requires a non-empty outbounds; fall back to a single direct outbound when the
+  // editor has none so a brand-new core is always valid.
+  const outbounds =
+    options.outbounds && options.outbounds.length > 0
+      ? (options.outbounds as unknown as JsonValue)
+      : ([{ type: "direct" }] as JsonValue);
+
+  const config: Record<string, JsonValue> = {
     log: { level: options.logLevel ?? "info" },
     inbounds: options.inbounds.map(createInboundConfig) as unknown as JsonValue,
-    outbounds: [{ type: "direct" }] as JsonValue
+    outbounds
   };
+
+  // route/dns/experimental are optional top-level sections; only emit them when the editor has
+  // real content so an untouched core stays minimal. The panel backend passes them to the node
+  // verbatim (nothing strips top-level keys), so the shapes below must match sing-box exactly.
+  const route = options.route;
+  if (route && (hasKeys(route.rules) || hasKeys(route.rule_set) || route.final || route.auto_detect_interface !== undefined || route.default_mark !== undefined)) {
+    config.route = route as unknown as JsonValue;
+  }
+  const dns = options.dns;
+  if (dns && (hasKeys(dns.servers) || hasKeys(dns.rules) || dns.final || dns.strategy || dns.disable_cache !== undefined || dns.disable_expire !== undefined || hasKeys(dns.fakeip))) {
+    config.dns = dns as unknown as JsonValue;
+  }
+  if (hasKeys(options.experimental)) {
+    config.experimental = options.experimental as unknown as JsonValue;
+  }
+
+  return config;
 }
 
 export function createSingBoxCoreConfig(options: CreateSingBoxCoreConfigOptions): SingBoxCoreConfig {
